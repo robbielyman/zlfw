@@ -1,0 +1,43 @@
+* zlfw
+
+=zlfw= is a Zig interface to the [[https://github.com/glfw/glfw][GLFW]] C library.
+=zlfw= provides Zig types for GLFW primitives, and a (subjectively) “Ziggier” feel.
+
+To add this package to your project, run this:
+
+#+begin_src bash
+$ zig fetch --save git+https://github.com/ryleelyman/zlfw#main
+#+end_src
+
+Then in your =build.zig= you can add this:
+
+#+begin_src zig
+const zlfw = b.dependency("zlfw", .{
+    .target = target,
+    .optimize = optimize,
+});
+
+// For whatever you’re building; in this case let’s assume it’s called exe.
+exe.root_module.addImport("zlfw", zlfw.module("zlfw"));
+#+end_src
+
+and in your source code:
+
+#+begin_src zig
+// import
+const zlfw = @import("zlfw");
+
+// and use it something like this
+var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+defer _ = gpa.deinit();
+const allocator = gpa.allocator();
+
+try zlfw.init(.{
+    .client_api = .none // for vulkan, for example
+}, &allocator, zlfw.defaultErrFn);
+defer zlfw.terminate();
+
+const window = zlfw.Window.create(640, 480, "zig is neat", .{}, null, null) orelse return error.NoWindow;
+defer window.destroy();
+while (!window.shouldClose()) zlfw.pollEvents();
+#+end_src

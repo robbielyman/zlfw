@@ -1,0 +1,17 @@
+.{
+    .name = "zlfw",
+    .version = "3.5.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "lib.zig",
+        "c.zig",
+    },
+    .dependencies = .{
+        .upstream = .{
+            .url = "git+https://github.com/glfw/glfw#b35641f4a3c62aa86a0b3c983d163bc0fe36026d",
+            .hash = "1220f703401bea1d52d240a9d217406aec89c687e8af2b2eed8dbb4d4ef653edbd96",
+            .lazy = true,
+        },
+    },
+}
