@@ -1,12 +1,12 @@
 * zlfw
 
-=zlfw= is a Zig interface to the [[https://github.com/glfw/glfw][GLFW]] C library.
+=zlfw= is a partial Zig interface to the [[https://github.com/glfw/glfw][GLFW]] C library.
 =zlfw= provides Zig types for GLFW primitives, and a (subjectively) “Ziggier” feel.
 
 To add this package to your project, run this:
 
 #+begin_src bash
-$ zig fetch --save git+https://github.com/ryleelyman/zlfw#main
+$ zig fetch --save git+https://github.com/robbielyman/zlfw#main
 #+end_src
 
 Then in your =build.zig= you can add this:
@@ -28,13 +28,12 @@ and in your source code:
 const zlfw = @import("zlfw");
 
 // and use it something like this
-var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+var gpa: std.heap.DebugAllocator(.{}) = .{};
 defer _ = gpa.deinit();
-const allocator = gpa.allocator();
 
 try zlfw.init(.{
     .client_api = .none // for vulkan, for example
-}, &allocator, zlfw.defaultErrFn);
+}, &gpa, zlfw.defaultErrFn);
 defer zlfw.terminate();
 
 const window = zlfw.Window.create(640, 480, "zig is neat", .{}, null, null) orelse return error.NoWindow;

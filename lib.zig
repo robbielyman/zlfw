@@ -9,43 +9,56 @@ pub const InitOptions = struct {
     cocoa_menubar: bool = true,
     libdecor: c.WaylandLibdecor = .prefer,
     x11_xcb_vulkan_surface: bool = true,
-    vulkan_loader: ?*const fn (?*anyopaque, [*:0]const u8) callconv(.C) ?*const fn () callconv(.C) void = null,
+    vulkan_loader: ?*const fn (?*anyopaque, [*:0]const u8) callconv(.c) ?*const fn () callconv(.c) void = null,
 };
 
-fn allocate(size: usize, user: *anyopaque) callconv(.C) ?*anyopaque {
-    const ally: *std.mem.Allocator = @ptrCast(@alignCast(user));
-    const bytes = @call(.auto, ally.vtable.alloc, .{ ally.ptr, size + 16, 4, @returnAddress() });
-    if (bytes) |b| {
-        const as_usizes: [*]usize = @ptrCast(@alignCast(b));
-        as_usizes[0] = size + 16;
-        return b + 16;
-    }
-    return null;
+fn allocate(comptime T: type) fn (usize, *anyopaque) callconv(.c) ?*anyopaque {
+    return struct {
+        fn f(size: usize, user: *anyopaque) callconv(.c) ?*anyopaque {
+            const instance: *T = @ptrCast(@alignCast(user));
+            const allocator: std.mem.Allocator = instance.allocator();
+            const bytes = allocator.allocWithOptionsRetAddr(u8, size + @sizeOf(usize), .of(usize), null, @returnAddress()) catch return null;
+            const as_usizes: [*]usize = @ptrCast(bytes);
+            as_usizes[0] = size + @sizeOf(usize);
+            return bytes.ptr + @as(usize, @sizeOf(usize));
+        }
+    }.f;
 }
 
-fn reallocate(ptr: *anyopaque, size: usize, user: *anyopaque) callconv(.C) ?*anyopaque {
-    const ally: *std.mem.Allocator = @ptrCast(@alignCast(user));
-    const bytes: [*]u8 = @as([*]u8, @ptrCast(ptr)) - 16;
-    const as_usizes: [*]usize = @ptrCast(@alignCast(bytes));
-    const old_size = as_usizes[0];
-    const succeeded = @call(.auto, ally.vtable.resize, .{ ally.ptr, bytes[0..old_size], 4, size + 16, @returnAddress() });
-    if (succeeded) {
-        as_usizes[0] = size + 16;
-        return bytes + 16;
-    }
-    deallocate(ptr, user);
-    return allocate(size, user);
+fn reallocate(comptime T: type) fn (*anyopaque, usize, *anyopaque) callconv(.c) ?*anyopaque {
+    return struct {
+        fn f(ptr: *anyopaque, size: usize, user: *anyopaque) callconv(.c) ?*anyopaque {
+            const instance: *T = @ptrCast(@alignCast(user));
+            const allocator: std.mem.Allocator = instance.allocator();
+            const given: [*]align(@alignOf(usize)) u8 = @ptrCast(@alignCast(ptr));
+            const bytes = given - @as(usize, @sizeOf(usize));
+            const as_usizes: [*]usize = @ptrCast(bytes);
+            const old_size = as_usizes[0];
+            if (allocator.resize(bytes[0..old_size], size + @sizeOf(usize))) {
+                as_usizes[0] = size + @sizeOf(usize);
+                return given;
+            }
+            deallocate(T)(ptr, user);
+            return allocate(T)(size, user);
+        }
+    }.f;
 }
 
-fn deallocate(ptr: *anyopaque, user: *anyopaque) callconv(.C) void {
-    const ally: *std.mem.Allocator = @ptrCast(@alignCast(user));
-    const bytes: [*]u8 = @as([*]u8, @ptrCast(ptr)) - 16;
-    const as_usizes: [*]usize = @ptrCast(@alignCast(bytes));
-    const old_size = as_usizes[0];
-    @call(.auto, ally.vtable.free, .{ ally.ptr, bytes[0..old_size], 4, @returnAddress() });
+fn deallocate(comptime T: type) fn (*anyopaque, *anyopaque) callconv(.c) void {
+    return struct {
+        fn f(ptr: *anyopaque, user: *anyopaque) callconv(.c) void {
+            const instance: *T = @ptrCast(@alignCast(user));
+            const allocator: std.mem.Allocator = instance.allocator();
+            const given: [*]align(@alignOf(usize)) u8 = @ptrCast(@alignCast(ptr));
+            const bytes = given - @as(usize, @sizeOf(usize));
+            const as_usizes: [*]usize = @ptrCast(@alignCast(bytes));
+            const true_size = as_usizes[0];
+            allocator.free(bytes[0..true_size]);
+        }
+    }.f;
 }
 
-pub fn init(opts: InitOptions, allocator: ?*const std.mem.Allocator, comptime errorFn: ?fn (c.Err, [:0]const u8) void) error{InitFailed}!void {
+pub fn init(opts: InitOptions, opt_allocator_instance: anytype, comptime errorFn: ?fn (c.Err, [:0]const u8) void) error{ OutOfMemory, InitFailed }!void {
     c.glfwInitHint(@intFromEnum(c.InitHint.joystick_hat_buttons), if (opts.hats_as_buttons) 1 else 0);
     c.glfwInitHint(@intFromEnum(c.InitHint.angle_platform_type), @intFromEnum(opts.angle_platform_type));
     c.glfwInitHint(@intFromEnum(c.InitHint.cocoa_chdir_resources), if (opts.cocoa_chdir_resources) 1 else 0);
@@ -53,18 +66,20 @@ pub fn init(opts: InitOptions, allocator: ?*const std.mem.Allocator, comptime er
     c.glfwInitHint(@intFromEnum(c.InitHint.wayland_libdecor), @intFromEnum(opts.libdecor));
     c.glfwInitHint(@intFromEnum(c.InitHint.x11_xcb_vulkan_surface), if (opts.x11_xcb_vulkan_surface) 1 else 0);
     if (opts.vulkan_loader) |vl| c.glfwInitVulkanLoader(vl);
-    if (allocator) |ally| {
+    const T = @TypeOf(opt_allocator_instance);
+    if (T != @TypeOf(null)) {
+        const Instance = @typeInfo(T).pointer.child;
         const a: c.Allocator = .{
-            .allocate = allocate,
-            .deallocate = deallocate,
-            .reallocate = reallocate,
-            .user = @constCast(ally),
+            .allocate = allocate(Instance),
+            .deallocate = deallocate(Instance),
+            .reallocate = reallocate(Instance),
+            .user = opt_allocator_instance,
         };
         c.glfwInitAllocator(&a);
     }
     if (errorFn) |e| {
         const inner = struct {
-            fn f(err: c_int, desc: [*:0]const u8) callconv(.C) void {
+            fn f(err: c_int, desc: [*:0]const u8) callconv(.c) void {
                 @call(.always_inline, e, .{
                     @as(c.Err, @enumFromInt(err)), std.mem.sliceTo(desc, 0),
                 });
@@ -139,7 +154,7 @@ pub const Window = opaque {
     };
 
     pub fn create(width: u31, height: u31, title: [:0]const u8, options: Window.InitOptions, monitor: ?*Monitor, share: ?*Window) ?*Window {
-        const fields = @typeInfo(Window.InitOptions).Struct.fields;
+        const fields = @typeInfo(Window.InitOptions).@"struct".fields;
         inline for (fields) |field| {
             const hint: c_int = @intFromEnum(@field(c.WindowHint, field.name));
             switch (field.type) {
@@ -182,7 +197,7 @@ pub fn waitEvents(timeout: ?f64) void {
 
 test "lifecycle" {
     std.testing.log_level = .debug;
-    try init(.{}, &std.testing.allocator, defaultErrorFn);
+    try init(.{}, &std.testing.allocator_instance, defaultErrorFn);
     defer terminate();
     const w = Window.create(640, 480, "test window", .{}, null, null) orelse return error.WindowCreationFailed;
     defer w.destroy();

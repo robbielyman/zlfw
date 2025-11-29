@@ -80,9 +80,9 @@ pub const ContextCreationApi = enum(c_int) {
 };
 
 pub const Allocator = extern struct {
-    allocate: *const fn (usize, *anyopaque) callconv(.C) ?*anyopaque,
-    reallocate: *const fn (*anyopaque, usize, *anyopaque) callconv(.C) ?*anyopaque,
-    deallocate: *const fn (*anyopaque, *anyopaque) callconv(.C) void,
+    allocate: *const fn (usize, *anyopaque) callconv(.c) ?*anyopaque,
+    reallocate: *const fn (*anyopaque, usize, *anyopaque) callconv(.c) ?*anyopaque,
+    deallocate: *const fn (*anyopaque, *anyopaque) callconv(.c) void,
     user: *anyopaque,
 };
 
@@ -138,8 +138,8 @@ pub extern "c" fn glfwInit() c_int;
 pub extern "c" fn glfwTerminate() void;
 pub extern "c" fn glfwInitHint(hint: c_int, val: c_int) void;
 pub extern "c" fn glfwInitAllocator(allocator: *const Allocator) void;
-pub extern "c" fn glfwInitVulkanLoader(?*const fn (?*anyopaque, [*:0]const u8) callconv(.C) ?*const fn () callconv(.C) void) void;
-pub extern "c" fn glfwSetErrorCallback(*const fn (c_int, [*:0]const u8) callconv(.C) void) ?*const fn (c_int, [*:0]const u8) callconv(.C) void;
+pub extern "c" fn glfwInitVulkanLoader(?*const fn (?*anyopaque, [*:0]const u8) callconv(.c) ?*const fn () callconv(.c) void) void;
+pub extern "c" fn glfwSetErrorCallback(*const fn (c_int, [*:0]const u8) callconv(.c) void) ?*const fn (c_int, [*:0]const u8) callconv(.c) void;
 
 pub extern "c" fn glfwWindowHint(c_int, c_int) void;
 pub extern "c" fn glfwWindowHintString(c_int, [*:0]const u8) void;
